@@ -24,6 +24,8 @@ executionID = UUID.randomUUID().toString()
 // Pod name to use
 podName = 'ai-coe-' + executionID + '-' + TARGET_BRANCH
 
+@Library('github.com/CentOS/cico-pipeline-library@master') _
+
 library identifier: "ci-pipeline@${env.ghprbActualCommit}",
         retriever: modernSCM([$class: 'GitSCMSource',
                               remote: "https://github.com/${env.ghprbGhRepository}",
