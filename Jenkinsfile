@@ -1,30 +1,47 @@
-env.ghprbGhRepository = env.ghprbGhRepository ?: 'goern/ci-pipeline-testing'
+/**
+ * CI Stage Pipeline Trigger
+ *
+ * This is a declarative pipeline for the CI stage pipeline
+ * that includes the building of images based on PRs
+ *
+ */
+
+// Openshift project
+openshiftProject = "continuous-infra"
+DOCKER_REPO_URL = '172.30.254.79:5000'
+
+// Defaults for SCM operations
+env.ghprbGhRepository = env.ghprbGhRepository ?: 'CentOS-PaaS-SIG/ci-pipeline'
 env.ghprbActualCommit = env.ghprbActualCommit ?: 'master'
-env.ghprbPullAuthorLogin = env.ghprbPullAuthorLogin ?: ''
 
-env.TARGET_BRANCH = env.TARGET_BRANCH ?: 'master'
+// If this PR does not include an image change, then use this tag
+STABLE_LABEL = "stable"
+tagMap = [:]
 
-// Needed for podTemplate()
-env.SLAVE_TAG = env.SLAVE_TAG ?: 'stable'
-env.RPMBUILD_TAG = env.RPMBUILD_TAG ?: 'stable'
-env.RSYNC_TAG = env.RSYNC_TAG ?: 'stable'
-env.OSTREE_COMPOSE_TAG = env.OSTREE_COMPOSE_TAG ?: 'stable'
-env.OSTREE_IMAGE_COMPOSE_TAG = env.OSTREE_IMAGE_COMPOSE_TAG ?: 'stable'
-env.SINGLEHOST_TEST_TAG = env.SINGLEHOST_TEST_TAG ?: 'stable'
-env.OSTREE_BOOT_IMAGE_TAG = env.OSTREE_BOOT_IMAGE_TAG ?: 'stable'
-env.LINCHPIN_LIBVIRT_TAG = env.LINCHPIN_LIBVIRT_TAG ?: 'stable'
+// Initialize
+tagMap['jenkins-continuous-infra-slave'] = STABLE_LABEL
+tagMap['rpmbuild'] = STABLE_LABEL
+tagMap['rsync'] = STABLE_LABEL
+tagMap['ostree-compose'] = STABLE_LABEL
+tagMap['ostree-image-compose'] = STABLE_LABEL
+tagMap['singlehost-test'] = STABLE_LABEL
+tagMap['ostree-boot-image'] = STABLE_LABEL
+tagMap['linchpin-libvirt'] = STABLE_LABEL
 
-env.DOCKER_REPO_URL = env.DOCKER_REPO_URL ?: '172.30.254.79:5000'
-env.OPENSHIFT_NAMESPACE = env.OPENSHIFT_NAMESPACE ?: 'continuous-infra'
-env.OPENSHIFT_SERVICE_ACCOUNT = env.OPENSHIFT_SERVICE_ACCOUNT ?: 'jenkins'
+// Fedora Fedmsg Message Provider for stage
+MSG_PROVIDER = "fedora-fedmsg-stage"
 
-// Execution ID for this run of the pipeline
-executionID = UUID.randomUUID().toString()
+// IRC properties
+IRC_NICK = "ai-coe-bot"
+IRC_CHANNEL = "#b4mad"
 
-// Pod name to use
-podName = 'ai-coe-' + executionID + '-' + TARGET_BRANCH
-
-@Library('github.com/CentOS/cico-pipeline-library@master') _
+// CI_MESSAGES known to build successfully
+CANNED_CI_MESSAGES = [:]
+CANNED_CI_MESSAGES['f26'] = '{"commit":{"username":"zdohnal","stats":{"files":{"README.patches":{"deletions":0,"additions":30,"lines":30},"sources":{"deletions":1,"additions":1,"lines":2},"vim.spec":{"deletions":7,"additions":19,"lines":26},".gitignore":{"deletions":0,"additions":1,"lines":1},"vim-8.0-rhbz1365258.patch":{"deletions":0,"additions":12,"lines":12}},"total":{"deletions":8,"files":5,"additions":63,"lines":71}},"name":"Zdenek Dohnal","rev":"3ff427e02625f810a2cedb754342be44d6161b39","namespace":"rpms","agent":"zdohnal","summary":"Merge branch f25 into f26","repo":"vim","branch":"f26","seen":false,"path":"/srv/git/repositories/rpms/vim.git","message":"Merge branch \'f25\' into f26\n","email":"zdohnal@redhat.com"},"topic":"org.fedoraproject.prod.git.receive"}'
+CANNED_CI_MESSAGES['f27'] = '{"commit":{"username":"adrian","stats":{"files":{"criu.spec":{"deletions":0,"additions":5,"lines":5}},"total":{"deletions":0,"files":1,"additions":5,"lines":5}},"name":"Adrian Reber","rev":"386bedee49cb887626140f2c60522751ec620f1d","namespace":"rpms","agent":"adrian","summary":"Adapt ExcludeArch depending on Fedora release","repo":"criu","branch":"f27","seen":false,"path":"/srv/git/repositories/rpms/criu.git","message":"Adapt ExcludeArch depending on Fedora release\\n","email":"adrian@lisas.de"},"topic":"org.fedoraproject.prod.git.receive"}'
+// Specific canned messages
+CANNED_CI_MESSAGES['f26-singlehost-test'] = '{"commit":{"username":"kdudka","stats":{"files":{"curl.spec":{"deletions":1,"additions":8,"lines":9},"0005-curl-7.53.1-CVE-2017-1000254.patch":{"deletions":0,"additions":136,"lines":136}},"total":{"deletions":1,"files":2,"additions":144,"lines":145}},"name":"Kamil Dudka","rev":"d1d232206aed8ef12596ec3939b72a6476845149","namespace":"rpms","agent":"kdudka","summary":"Resolves: CVE-2017-1000254 - fix out of bounds read in FTP PWD response parser","repo":"curl","branch":"f26","seen":false,"path":"/srv/git/repositories/rpms/curl.git","message":"Resolves: CVE-2017-1000254 - fix out of bounds read in FTP PWD response parser\n","email":"kdudka@redhat.com"},"topic":"org.fedoraproject.prod.git.receive"}'
+CANNED_CI_MESSAGES['f27-singlehost-test'] = '{"commit":{"username":"kdudka","stats":{"files":{"curl.spec":{"deletions":4,"additions":11,"lines":15},"0005-curl-7.55.1-CVE-2017-1000254.patch":{"deletions":0,"additions":136,"lines":136}},"total":{"deletions":4,"files":2,"additions":147,"lines":151}},"name":"Kamil Dudka","rev":"9765ef0484ffde44a0104d919799f461b3cb802d","namespace":"rpms","agent":"kdudka","summary":"Resolves: CVE-2017-1000254 - fix out of bounds read in FTP PWD response parser","repo":"curl","branch":"f27","seen":false,"path":"/srv/git/repositories/rpms/curl.git","message":"Resolves: CVE-2017-1000254 - fix out of bounds read in FTP PWD response parser\n","email":"kdudka@redhat.com"},"topic":"org.fedoraproject.prod.git.receive"}'
 
 library identifier: "ci-pipeline@${env.ghprbActualCommit}",
         retriever: modernSCM([$class: 'GitSCMSource',
@@ -34,181 +51,51 @@ library identifier: "ci-pipeline@${env.ghprbActualCommit}",
                                         templates: [[value: '+refs/heads/*:refs/remotes/@{remote}/*'],
                                                     [value: '+refs/pull/*:refs/remotes/origin/pr/*']]]]])
 
-properties(
-        [
-                buildDiscarder(logRotator(artifactDaysToKeepStr: '30', artifactNumToKeepStr: '', daysToKeepStr: '90', numToKeepStr: '')),
-                disableConcurrentBuilds(),
-                parameters(
-                        [
-                                string(description: 'CI Message that triggered the pipeline', name: 'CI_MESSAGE'),
-                                string(defaultValue: '', description: 'HTTP Server', name: 'HTTP_SERVER'),
-                                string(defaultValue: '', description: 'HTTP dir', name: 'HTTP_DIR'),
-                                string(defaultValue: '', description: 'RSync User', name: 'RSYNC_USER'),
-                                string(defaultValue: '', description: 'RSync Server', name: 'RSYNC_SERVER'),
-                                string(defaultValue: '', description: 'RSync Dir', name: 'RSYNC_DIR'),
-                                string(defaultValue: 'ci-pipeline', description: 'Main project repo', name: 'PROJECT_REPO'),
-                                string(defaultValue: 'master', description: '', name: 'ghprbActualCommit'),
-                                string(defaultValue: 'goern/ci-pipeline-testing', description: '', name: 'ghprbGhRepository'),
-                                string(defaultValue: '', description: '', name: 'sha1'),
-                                string(defaultValue: '', description: '', name: 'ghprbPullId'),
-                                string(defaultValue: '', description: '', name: 'ghprbPullAuthorLogin'),
-                                string(defaultValue: 'stable', description: 'Tag for slave image', name: 'SLAVE_TAG'),
-                                string(defaultValue: 'stable', description: 'Tag for rpmbuild image', name: 'RPMBUILD_TAG'),
-                                string(defaultValue: 'stable', description: 'Tag for rsync image', name: 'RSYNC_TAG'),
-                                string(defaultValue: 'stable', description: 'Tag for singlehost test image', name: 'SINGLEHOST_TEST_TAG'),
-                                string(defaultValue: '172.30.254.79:5000', description: 'Docker repo url for Openshift instance', name: 'DOCKER_REPO_URL'),
-                                string(defaultValue: 'continuous-infra', description: 'Project namespace for Openshift operations', name: 'OPENSHIFT_NAMESPACE'),
-                                string(defaultValue: 'jenkins', description: 'Service Account for Openshift operations', name: 'OPENSHIFT_SERVICE_ACCOUNT'),
-                                booleanParam(defaultValue: false, description: 'Force generation of the image', name: 'GENERATE_IMAGE'),
-                        ]
-                ),
-        ]
-)
-
-podTemplate(name: podName,
-            label: podName,
-            cloud: 'openshift',
-            serviceAccount: OPENSHIFT_SERVICE_ACCOUNT,
-            idleMinutes: 0,
-            namespace: OPENSHIFT_NAMESPACE,
-
-        containers: [
-                // This adds the custom slave container to the pod. Must be first with name 'jnlp'
-                containerTemplate(name: 'jnlp',
-                        image: DOCKER_REPO_URL + '/' + OPENSHIFT_NAMESPACE + '/jenkins-continuous-infra-slave:' + SLAVE_TAG,
-                        ttyEnabled: false,
-                        args: '${computer.jnlpmac} ${computer.name}',
-                        command: '',
-                        workingDir: '/workDir'),
-                // This adds the rpmbuild test container to the pod.
-                containerTemplate(name: 'rpmbuild',
-                        alwaysPullImage: true,
-                        image: DOCKER_REPO_URL + '/' + OPENSHIFT_NAMESPACE + '/rpmbuild:' + RPMBUILD_TAG,
-                        ttyEnabled: true,
-                        command: 'cat',
-                        privileged: true,
-                        workingDir: '/workDir'),
-                // This adds the rsync test container to the pod.
-                containerTemplate(name: 'rsync',
-                        alwaysPullImage: true,
-                        image: DOCKER_REPO_URL + '/' + OPENSHIFT_NAMESPACE + '/rsync:' + RSYNC_TAG,
-                        ttyEnabled: true,
-                        command: 'cat',
-                        privileged: true,
-                        workingDir: '/workDir'),
-                // This adds the singlehost test container to the pod.
-                containerTemplate(name: 'singlehost-test',
-                        alwaysPullImage: true,
-                        image: DOCKER_REPO_URL + '/' + OPENSHIFT_NAMESPACE + '/singlehost-test:' + SINGLEHOST_TEST_TAG,
-                        ttyEnabled: true,
-                        command: 'cat',
-                        privileged: true,
-                        workingDir: '/workDir'),
-                containerTemplate(name: 'linchpin-libvirt',
-                        alwaysPullImage: true,
-                        image: DOCKER_REPO_URL + '/' + OPENSHIFT_NAMESPACE + '/linchpin-libvirt:' + LINCHPIN_LIBVIRT_TAG,
-                        ttyEnabled: true,
-                        command: '/usr/sbin/init',
-                        privileged: true,
-                        workingDir: '/workDir')
-        ],
-        volumes: [emptyDirVolume(memory: false, mountPath: '/sys/class/net')])
-{
-    node(podName) {
-        def currentStage = ""
-
-        ansiColor('xterm') {
-            timestamps {
-                env.HOME = "/root"
-
-                try {
-                    // Prepare our environment
-                    currentStage = "prepare-environment"
-                    stage(currentStage) {
-                        deleteDir()
-                        // Set our default env variables
-                        pipelineUtils.setDefaultEnvVars()
-                        // Prepare Credentials (keys, passwords, etc)
-                        pipelineUtils.prepareCredentials()
-                        // Parse the CI_MESSAGE and inject it as env vars
-                        pipelineUtils.injectFedmsgVars(env.CI_MESSAGE)
-                        // Set RSYNC_BRANCH for rsync'ing to artifacts store
-                        env.RSYNC_BRANCH = pipelineUtils.getRsyncBranch()
-                        // Decorate our build
-                        pipelineUtils.updateBuildDisplayAndDescription()
-                        // Gather some info about the node we are running on for diagnostics
-                        pipelineUtils.verifyPod(OPENSHIFT_NAMESPACE, env.NODE_NAME)
-                        // create audit message file
-                        pipelineUtils.initializeAuditFile(msgAuditFile)
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'openshift'
+            label 'stage-trigger-' + env.ghprbActualCommit
+            containerTemplate {
+                name 'jnlp'
+                args '${computer.jnlpmac} ${computer.name}'
+                image DOCKER_REPO_URL + '/' + openshiftProject + '/jenkins-continuous-infra-slave:' + STABLE_LABEL
+                ttyEnabled false
+                command ''
+            }
+        }
+    }
+    stages {
+        stage("Get Changelog") {
+            steps {
+                node('master') {
+                    script {
+                        echo "PR number is: ${env.ghprbPullId}"
+                        env.changeLogStr = pipelineUtils.getChangeLogFromCurrentBuild()
+                        echo env.changeLogStr
                     }
-
-                    // Set our current stage value
-                    currentStage = "ci-pipeline-rpmbuild"
-                    stage(currentStage) {
-
-                        // SCM
-                        dir('ci-pipeline') {
-                            // Checkout our ci-pipeline repo based on the value of env.ghprbActualCommit
-                            checkout([$class: 'GitSCM', branches: [[name: env.ghprbActualCommit]],
-                                      doGenerateSubmoduleConfigurations: false,
-                                      extensions                       : [],
-                                      submoduleCfg                     : [],
-                                      userRemoteConfigs                : [
-                                              [refspec:
-                                                       '+refs/heads/*:refs/remotes/origin/*  +refs/pull/*:refs/remotes/origin/pr/* ',
-                                               url: "https://github.com/${env.ghprbGhRepository}"]
-                                      ]
-                            ])
-                        }
-
-                        // Set stage specific vars
-                        pipelineUtils.setStageEnvVars(currentStage)
-
-                        // Execute rpmbuild-test script in rpmbuild container
-                        pipelineUtils.executeInContainer(currentStage, "rpmbuild", "/tmp/rpmbuild-test.sh")
-
-                        def package_props = "${env.WORKSPACE}/" + currentStage + "/logs/package_props.txt"
-                        def package_props_groovy = "${env.WORKSPACE}/package_props.groovy"
-                        pipelineUtils.convertProps(package_props, package_props_groovy)
-                        load(package_props_groovy)
-                    }
-
-                } catch (e) {
-                    // Set build result
-                    currentBuild.result = 'FAILURE'
-
-                    // Report the exception
-                    echo "Error: Exception from " + currentStage + ":"
-                    echo e.getMessage()
-
-                    // Throw the error
-                    throw e
-
-                } finally {
-                    // Set the build display name and description
-                    pipelineUtils.setBuildDisplayAndDescription()
-
-                    // only post to IRC on a failure
-                    if (currentBuild.result == 'FAILURE') {
-                        // only if this is a production build
-                        if (env.ghprbActualCommit == null || env.ghprbActualCommit == "master") {
-                            def message = "${JOB_NAME} build #${BUILD_NUMBER}: ${currentBuild.currentResult}: ${BUILD_URL}"
-                            pipelineUtils.sendIRCNotification("${IRC_NICK}-${UUID.randomUUID()}", IRC_CHANNEL, message)
-                        }
-                    }
-
-                    try {
-                        pipelineUtils.getContainerLogsFromPod(OPENSHIFT_NAMESPACE, env.NODE_NAME)
-                    } catch (e) {
-                        // Report the exception
-                        echo "Warning: Could not get containerLogsFromPod: "
-                        echo e.getMessage()
-                    }
-
-                    // Archive our artifacts
-                    step([$class: 'ArtifactArchiver', allowEmptyArchive: true, artifacts: '**/logs/**,*.txt,*.groovy,**/job.*,**/*.groovy,**/inventory.*', excludes: '**/job.props,**/job.props.groovy,**/*.example', fingerprint: true])
+                    writeFile file: 'changelog.txt', text: env.changeLogStr
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'changelog.txt'
                 }
             }
+        }
+    }
+    post {
+        always {
+            script {
+                String prMsg = ""
+                if (env.ghprbActualCommit != null && env.ghprbActualCommit != "master") {
+                    prMsg = "(PR #${env.ghprbPullId} ${env.ghprbPullAuthorLogin})"
+                }
+                def message = "${JOB_NAME} ${prMsg} build #${BUILD_NUMBER}: ${currentBuild.currentResult}: ${BUILD_URL}"
+                pipelineUtils.sendIRCNotification("${IRC_NICK}-${UUID.randomUUID()}", IRC_CHANNEL, message)
+            }
+        }
+        success {
+            echo "yay!"
+        }
+        failure {
+            error "build failed!"
         }
     }
 }
